@@ -32,7 +32,7 @@ int main()
     MOG2 = createBackgroundSubtractorMOG2(history, limit, shadows);
     fast = FastFeatureDetector::create();
 
-    processVideo(MOG2);
+    processVideo(MOG2,fast);
 
     destroyAllWindows();
     return 0;
