@@ -7,11 +7,10 @@
 #include <opencv2/features2d.hpp>
 #include <opencv2/objdetect/objdetect.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/core/cuda.hpp>
+#include <opencv2/core/core.hpp>
 
 using namespace std;
 using namespace cv;
-using namespace cuda;
 
 /*SETTINGS*/
 int history = 20;
@@ -32,7 +31,7 @@ int thick = 3;
 
 int timer = 0;
 int resettime = 0;
-int mindist = 150;
+int mindist = 300;
 
 char timestring[24];
 time_t rawtime;
@@ -41,11 +40,11 @@ Point2f prevcenter(0.0,0.0);
 
 String bodycascade = "/home/nvidia/Desktop/Program/Cascades/haarcascades/haarcascade_upperbody.xml";
 String facecascade = "/home/nvidia/Desktop/Program/Cascades/haarcascades/haarcascade_frontalface_alt2.xml";
-CascadeClassifier body, face;
+cv::CascadeClassifier body, face;
 
 void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fast);
 void getROI(Point &center, vector <Point2f> &coords);
-void detect(Mat& frame, Mat& gray, CascadeClassifier& body, CascadeClassifier& face);
+void detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color);
 vector<Point2f> motiondetect(Mat& frame, Mat& gray, Point center, Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fast);
 float getdist(Point2f center);
 string get_tegra_pipeline(string width, string height, string fps);
@@ -69,11 +68,9 @@ void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fas
 	body.load(bodycascade);
 	face.load(facecascade);	
 	
-	vector<Rect> faces, bodies;
-	
 	string width = "1280";
 	string height = "720";
-	string fps = "30";
+	string fps = "10";
 
 	cout<<width<<"x"<<height<<" at "<<fps<<"fps"<<endl;
 
@@ -89,7 +86,7 @@ void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fas
     prevcenter = center;
     
     do
-    {
+    { 
     	time(&rawtime);
         timer++;
         resettime++;
@@ -102,13 +99,16 @@ void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fas
         cvtColor(frame, gray, COLOR_BGR2GRAY);
         
 		//For facial and body detection
-		//detect(frame, gray, body, face);
 		
+		detect(frame, gray, face, green);
+		//detect(frame, gray, body, white);
+        
+        
         coords = motiondetect(frame, gray, center, MOG2, fast);
         
         if(coords.size()>minkeypoints && timer%ROIupdate==0)
 		{
-		    getROI(center, coords);
+			getROI(center, coords);
 		    resettime = 0;
 		}
 
@@ -124,12 +124,11 @@ void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fas
     	line(frame, Point(center.x-20, center.y), Point(center.x+20, center.y), red, 2);
     	line(frame, Point(center.x, center.y-20), Point(center.x, center.y+20), red, 2);
         
-        //drawKeypoints(frame, kpts, frame);
-        
         struct tm *timeinfo = localtime(&rawtime);
         sprintf(timestring, "%s", asctime(timeinfo));
-        putText(frame, timestring, Point2f(0,cap.get(4)*0.025), FONT_HERSHEY_PLAIN, 1, red, 1);
-
+        putText(frame, timestring, Point2f(0,cap.get(4)*0.025), FONT_HERSHEY_PLAIN, 1.25, white, 1.5);
+		
+		
         imshow("Footage", frame);
 
     }while(waitKey(1)!=27);
@@ -137,23 +136,16 @@ void processVideo(Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fas
     cap.release();
 }
 
-void detect(Mat& frame, Mat& gray, CascadeClassifier& body, CascadeClassifier& face)
+void detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
 {	
-	vector<Rect> faces, bodies;
+	vector<Rect> ROIs;
 	equalizeHist(gray, gray);
-	face.detectMultiScale(gray, faces, 1.1, 2, 0|CASCADE_SCALE_IMAGE, Size(30,30));
-	body.detectMultiScale(gray, bodies, 1.1, 2, 0|CASCADE_SCALE_IMAGE, Size(30,30));
+	cascade.detectMultiScale(gray, ROIs, 1.2, 4, 0|CASCADE_SCALE_IMAGE, Size(70,70));
 	
-	for(int i=0; i<faces.size(); i++)
+	for(int i=0; i<ROIs.size(); i++)
 	{
-		rectangle(frame, faces[i], green);
+		rectangle(frame, ROIs[i], color);
 	}
-	
-	for(int i=0; i<bodies.size(); i++)
-	{
-		rectangle(frame, bodies[i], white);
-	}
-	
 }
 
 vector <Point2f> motiondetect(Mat& frame, Mat& gray, Point center, Ptr <BackgroundSubtractor> MOG2, Ptr <FastFeatureDetector> fast)
@@ -167,6 +159,8 @@ vector <Point2f> motiondetect(Mat& frame, Mat& gray, Point center, Ptr <Backgrou
     fast->detect(fgmaskMOG2, kpts);
 
     KeyPoint::convert(kpts, coords);
+    
+    //drawKeypoints(frame, kpts, frame);
     
     return coords;
 }
@@ -191,18 +185,18 @@ void getROI(Point &center, vector <Point2f> &coords)
     if(hdist > mindist)
     {
     	if((center.x - prevcenter.x)>0)
-    		cout<<"Move right"<<endl;
+    		cout<<"RIGHT\t: "<<center.x - prevcenter.x<<endl;
     	else
-    		cout<<"Move left"<<endl;
+    		cout<<"LEFT\t: "<<prevcenter.x - center.x<<endl;
     	prevcenter = center;
     }
     
     if(vdist > mindist)
     {	
     	if((center.y - prevcenter.y)>0)
-    		cout<<"Move down"<<endl;
+    		cout<<"DOWN\t: "<<center.y - prevcenter.y<<endl;
     	else
-    		cout<<"Move up"<<endl;
+    		cout<<"UP\t: "<<prevcenter.y - center.y<<endl;
     	prevcenter = center;
     }
 }
@@ -218,4 +212,3 @@ string get_tegra_pipeline(string width, string height, string fps)
 {
     return "nvcamerasrc ! video/x-raw(memory:NVMM), width=(int) "+width+" , height=(int) "+height+", format=(string)I420, framerate=(fraction) "+fps+"/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink";
 }
-
