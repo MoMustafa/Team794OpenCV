@@ -1,91 +1,10 @@
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/video/background_segm.hpp>
-#include <opencv2/opencv.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/objdetect/objdetect.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-
-#include <iostream>
-#include <ctype.h>
-
 #include "surveillance.h"
 
-using namespace std;
-using namespace cv;
+surveillance::surveillance() : 
+red(0,0,255), green(0,255,0), blue(255, 0, 0), white(255,255,255), black(0,0,0)
+{}
 
-Scalar red(0,0,255);
-Scalar green(0,255,0);
-Scalar blue(255, 0, 0);
-Scalar white(255,255,255);
-Scalar black(0,0,0);
-
-//SETTINGS
-string width = "1920";
-string height = "1080";
-string fps = "10";
-
-// KLT Parameters 
-const int MAX_COUNT = 500;
-double quality = 0.001;
-double k = 0.04; 
-int minDist = 1;
-int blockSize = 3;
-bool useHarris = false;
-int maxLevel = 3;
-int flags = 0;
-int minThreshold = 0.001;
-
-// Detection Parameters 
-int minNeighbors = 3;
-double scaleFactor = 1.05;
-
-// Drawing Parameters 
-int radius = 1;
-int thickness = -1;
-int lineType = 8;
-
-// Efficiency Parameters 
-bool needToInit = false;
-int detectionFreq = 10;
-
-string get_tegra_pipeline(string, string, string);
-
-Rect detect(Mat&, Mat&, CascadeClassifier&, Scalar);
-
-int runprocess(CascadeClassifier&, VideoCapture);
-
-void getCenter(Point&, vector<Point2f>&);
-
-void DrawPoints(Mat&, Rect, Point&, vector<Point2f>&, vector<uchar>);
-
-TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
-Size subPixWinSize(10,10), winSize(31,31);
-
-String bodycascade = "/home/nvidia/Desktop/Program/Cascades/haarcascades/haarcascade_upperbody.xml";
-String facecascade = "/home/nvidia/Desktop/Program/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
-cv::CascadeClassifier body, face;
-Point2f point;
-
-int main()
-{
-	surveillance camera;
-		
-	body.load(bodycascade);
-	face.load(facecascade);
-	
-	string pipeline = get_tegra_pipeline(width, height, fps);
-	VideoCapture cap(pipeline, CAP_GSTREAMER);
-	
-	if(cap.isOpened())
-		runprocess(face, cap);
-	else
-		cout<<"Camera cannot be opened."<<endl;
-	return 0;	
-}
-
-
-int runprocess(CascadeClassifier& cascade, VideoCapture cap)
+int surveillance::runprocess(CascadeClassifier& cascade, VideoCapture cap)
 {
 
 	Mat gray, prevGray, image, frame;
@@ -144,7 +63,7 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 	return 0;
 }
 
-void DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, vector<uchar> status)
+void surveillance::DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, vector<uchar> status)
 {
 	size_t i, k;	
 	Point totals;
@@ -166,18 +85,18 @@ void DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, 
 		center.x = (int) totals.x/features.size();
 		center.y = (int) totals.y/features.size();
 	
-	// RESET NEEDS FIXING
-	//else
-	//{
-	//	center.x = ROI.x + ROI.width/2;
-	//	center.y = ROI.y + ROI.height/2;
-	//}
-	
+	/* RESET NEEDS FIXING
+	else
+	{
+		center.x = ROI.x + ROI.width/2;
+		center.y = ROI.y + ROI.height/2;
+	}
+	*/
 	line(frame, Point(center.x-20, center.y), Point(center.x+20, center.y), green, 2);
 	line(frame, Point(center.x, center.y-20), Point(center.x, center.y+20), green, 2);
 }
 
-Rect detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
+Rect surveillance::detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
 {	
 	vector<Rect> ROIs;
 	equalizeHist(gray, gray);
@@ -189,8 +108,10 @@ Rect detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
 	return Rect(0, 0, gray.size().width, gray.size().height);
 }
 
-string get_tegra_pipeline(string width, string height, string fps)
+string surveillance::get_tegra_pipeline(string width, string height, string fps)
 {      
 	return "nvcamerasrc ! video/x-raw(memory:NVMM), width=(int)"+width+", height=(int) "+height+", format=(string)I420, framerate=(fraction) "+fps+"/1 ! nvvidconv flip-method=0 ! video/x-raw, width=(int) "+width+" , height=(int) "+height+", format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR, framerate=(fraction) "+fps+"/1 ! appsink";
 
 }
+
+
