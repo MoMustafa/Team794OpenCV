@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <ctype.h>
+#include <cmath>
 
 using namespace std;
 using namespace cv;
@@ -50,10 +51,12 @@ string get_tegra_pipeline(string, string, string);
 
 Rect detect(Mat&, Mat&, CascadeClassifier&, Scalar);
 
+void motor_control(Point);
+
 int runprocess(CascadeClassifier&, VideoCapture);
 
 void getCenter(Point&, vector<Point2f>&);
 
-void DrawPoints(Mat&, Rect, Point&, vector<Point2f>&, vector<uchar>);
+int DrawPoints(Mat&, Rect, Point&, vector<Point2f>&, vector<uchar>);
 
 #endif
