@@ -37,7 +37,7 @@ void run_motor(const void* motorcommand, int serial_port)
 	cout<<(char*)motorcommand<<endl;
 	if(write(serial_port, motorcommand, commandsize) == -1)
 		cout<<"Write error"<<endl;
-	//usleep(delay/100);
+	usleep(delay/100);
 }
 
 void reset_motor(int serial_port)

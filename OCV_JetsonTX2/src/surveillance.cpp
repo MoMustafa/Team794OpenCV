@@ -9,7 +9,7 @@ string height = "720";
 string fps = "10";
 
 //KLT Parameters 
-const int MAX_COUNT = 1000;
+const int MAX_COUNT = 100;
 double quality = 0.001;
 double k = 0.04; 
 int minDist = 1;
@@ -23,8 +23,8 @@ TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
 Size subPixWinSize(10,10), winSize(31,31);
 
 //Detection Parameters 
-int minNeighbors = 5;
-double scaleFactor = 1.10;
+int minNeighbors = 9;
+double scaleFactor = 1.05;
 
 String bodycascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_upperbody.xml";
 String facecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
@@ -54,6 +54,7 @@ int detectionFreq = 100;
 const char* port_name;
 int serialport;
 const void* command;
+string light = "1L";
 
 //Server Variables
 char *myfifo = "/tmp/myfifo";
@@ -111,11 +112,12 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 			
 			if(ROI.size() != frame.size())
 			{
-				//cout<<"FOUND!"<<endl;
+				light = "0L";
 				displaced = 0;
 				rectangle(mask, ROI, Scalar(255), -1);
 				needToInit = true;
 				tries = 0;
+				usleep(50000);
 			}
 			else
 				tries++;
@@ -127,6 +129,7 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 				displaced = 0;
 				tries = 0;
 				reset_motor(serialport);
+				integ = Point2f(0.0, 0.0);
 				usleep(50000);
 			}
 		}
@@ -162,7 +165,9 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 		
 		std::swap(features[1], features[0]);
     	cv::swap(prevGray, gray);
-    	//rectangle(frame, ROI, green, 3);
+    	rectangle(frame, 
+    		Point(screencenter.x-320, screencenter.y-180), 
+    		Point(screencenter.x+320, screencenter.y+180), green, 1);
     	
     	putText(frame, dt, Point2f(10,50), FONT_HERSHEY_SIMPLEX, 1, white, 2);
     	
@@ -174,7 +179,7 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 				count = 0;
 		}
 		
-		//output.write(frame);
+		output.write(frame);
 		//imshow("Footage", frame);
 		
 	}while(waitKey(1)!=27);
@@ -253,13 +258,14 @@ void motor_control(Point center)
 	Point2f error;
 	int minwindow = 50;
 	int maxwindow = 500;
-	double p_scale = 0.024;
-	double t_scale = 0.024;
-	double int_p = 0.006;
-	double int_t = 0.006;
+	double p_scale = 0.026;
+	double t_scale = 0.026;
+	double int_p = 0.01;
+	double int_t = 0.01;
     double err_scale = 50.0;
     
 	error = (center - screencenter);
+	cout<<"Ex: "<<error.x<<" Ey: "<<error.y<<endl;
 	
 	//Bound Check 2.0
 	if((motorpos.x > panmax && error.x > 0) || (motorpos.x < panmin && error.x < 0))
@@ -277,9 +283,8 @@ void motor_control(Point center)
 	if(abs(error.y) > minwindow && abs(error.y) < maxwindow)
 		motorpos.y += (t_scale)*(error.y)+(int_t*integ.y);
 	
-	
 	stringstream ss;
-	ss << motorpos.x << "P" << motorpos.y << "T0L\n";
+	ss << motorpos.x << "P" << motorpos.y << "T" << light << "\n";
 	command = ss.str();
 	
 	run_motor(command.c_str(), serialport);
