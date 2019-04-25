@@ -2,7 +2,7 @@
 
 int delay = 750000;
 int commandsize = 11;
-string centerpos = "750P665T0L\n";
+string centerpos = "500P500T1L\n";
 
 int init_motor(const char* port_name)
 {
@@ -29,7 +29,6 @@ int init_motor(const char* port_name)
 	run_motor(centerpos.c_str(), serial_port);
 	usleep(delay);
 	cout<<"Motor Successfully Initialized"<<endl;
-	
 	return serial_port;
 }
 

@@ -1,5 +1,6 @@
 #include "../includes/surveillance.h"
 #include "../includes/motorctrl.h"
+#include "../includes/server.h"
 
 //VARIABLES
 //Footage Settings
@@ -8,7 +9,7 @@ string height = "720";
 string fps = "10";
 
 //KLT Parameters 
-const int MAX_COUNT = 500;
+const int MAX_COUNT = 1000;
 double quality = 0.001;
 double k = 0.04; 
 int minDist = 1;
@@ -22,20 +23,18 @@ TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
 Size subPixWinSize(10,10), winSize(31,31);
 
 //Detection Parameters 
-int minNeighbors = 4;
-double scaleFactor = 1.05;
+int minNeighbors = 5;
+double scaleFactor = 1.10;
 
-String bodycascade = "/home/nvidia/Desktop/ProgramKLT/Cascades/haarcascades/haarcascade_fullbody.xml";
-String facecascade = "/home/nvidia/Desktop/ProgramKLT/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
+String bodycascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_upperbody.xml";
+String facecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
 cv::CascadeClassifier body, face;
 
 Point2f point;
-Point mid(665,750);
+Point mid(500,500);
 Point motorpos;
 Point screencenter;
-double integ_x = 0.0;
-double integ_y = 0.0;
-
+Point2f integ(0.0, 0.0);
 
 //Drawing Parameters 
 int radius = 1;
@@ -56,6 +55,9 @@ const char* port_name;
 int serialport;
 const void* command;
 
+//Server Variables
+char *myfifo = "/tmp/myfifo";
+
 int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 {
 	port_name = "/dev/ttyUSB0"; 
@@ -66,10 +68,13 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 	vector<uchar> status;
     vector<float> err;
     
-    //cout<<cap.get(3)<<" x "<<cap.get(4)<<endl;
 	screencenter = Point(cap.get(3)/2, cap.get(4)/2);
 	Point center = screencenter;
 	motorpos = mid;
+	
+	VideoWriter output("footage.avi", VideoWriter::fourcc('M','J','P','G'), 2, Size(cap.get(3), cap.get(4)), true);
+	
+	string dt;
 	
 	int timer = 0;
 	int displaced = 0;
@@ -77,8 +82,18 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 	bool reset = false;
 	Rect ROI = Rect();
 	
+	vector<int> compression_params;
+    compression_params.push_back(CV_IMWRITE_JPEG_QUALITY);
+    //compression_params.push_back(9);
+	
+	int count = 0;
+	mkfifo(myfifo, 0666);
+	
 	do
 	{
+		time_t now = time(0);
+		dt = ctime(&now);
+		dt = dt.substr(0, dt.length()-1);
 		if(!cap.read(frame))
 			break;
 		
@@ -88,8 +103,12 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 		
 		if(timer%detectionFreq == 0 || timer == 0)
 		{
-			//cout<<"Detecting\t";
 			ROI = detect(frame, gray, cascade, green);
+			//ROI.x += ROI.width*0.40;
+			//ROI.y += ROI.height*0.25;
+			//ROI.height -= ROI.height*0.35;
+			//ROI.width -= ROI.width*0.75;
+			
 			if(ROI.size() != frame.size())
 			{
 				//cout<<"FOUND!"<<endl;
@@ -100,19 +119,15 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 			}
 			else
 				tries++;
-				
-			//cout<<"try :"<<tries<<endl;
 			
 			if(tries > 5)
 			{
-				//cout<<"Resetting.  Center:\t";
 				reset = true;
 				center = screencenter;
 				displaced = 0;
 				tries = 0;
 				reset_motor(serialport);
 				usleep(50000);
-				//cout<<center.x<<" x "<<center.y<<endl;
 			}
 		}
 		
@@ -133,8 +148,7 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 			
 			displaced += DrawPoints(frame, ROI, center, features[1], status);
 		}
-		//cout<<"Crosshair: "<<center.x<<" x "<<center.y<<"\t";
-		//cout<<"Displaced points: "<<displaced<<endl;
+
 		if(displaced > 100)
 			timer=0;
 		else
@@ -148,9 +162,20 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 		
 		std::swap(features[1], features[0]);
     	cv::swap(prevGray, gray);
-		imshow("Footage", frame);
+    	//rectangle(frame, ROI, green, 3);
+    	
+    	putText(frame, dt, Point2f(10,50), FONT_HERSHEY_SIMPLEX, 1, white, 2);
+    	
+    	if(timer%1 == 0)
+    	{
+    		send2server(frame, count);
+    		count++;
+			if(count > 9)
+				count = 0;
+		}
 		
-		//usleep(50000);
+		//output.write(frame);
+		//imshow("Footage", frame);
 		
 	}while(waitKey(1)!=27);
 	
@@ -160,6 +185,31 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 	
 	close_motor(serialport);
 	return 0;
+}
+
+void send2server(Mat frame, int count)
+{
+	int fd = open(myfifo, O_WRONLY);
+	
+	size_t s = 320;
+	Mat resized;
+	
+	resize(frame, resized, Size(0,0), 0.5, 0.5, INTER_NEAREST);
+
+	string filename = "/home/nvidia/WebServer/flask-video-streaming/";
+	char str[1];
+	sprintf(str, "%d", count);
+	filename = filename + str + ".jpg"; 
+	
+	vector<uchar> buff; //buffer
+	vector<int> param(2);
+	param[0] = IMWRITE_JPEG_QUALITY;
+	param[1] = 95; //default(95) 0-100
+	imencode(".jpg", resized, buff, param);
+	
+	write(fd, buff.data(), buff.size());
+		
+	close(fd);
 }
 
 int DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, vector<uchar> status)
@@ -180,18 +230,11 @@ int DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, v
 		}
 		
 		features[k++] = features[i];
-		circle(frame, features[i], radius, red, thickness, lineType);
+		circle(frame, features[i], radius, red, 2, lineType);
 	}
 	
 	center.x = (int) totals.x/features.size();
 	center.y = (int) totals.y/features.size();
-	
-	// RESET NEEDS FIXING
-	//else
-	//{
-	//	center.x = ROI.x + ROI.width/2;
-	//	center.y = ROI.y + ROI.height/2;
-	//}
 	
 	line(frame, Point(center.x-20, center.y), Point(center.x+20, center.y), green, 2);
 	line(frame, Point(center.x, center.y-20), Point(center.x, center.y+20), green, 2);
@@ -202,45 +245,51 @@ int DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, v
 void motor_control(Point center)
 {
 	string command;
+	int panmin = 200;
+	int panmax = 800;
+	int tiltmin = 375;
+	int tiltmax = 800;
 	
-	Point error;
+	Point2f error;
 	int minwindow = 50;
 	int maxwindow = 500;
 	double p_scale = 0.024;
 	double t_scale = 0.024;
 	double int_p = 0.006;
-    double int_t = 0.006;
+	double int_t = 0.006;
     double err_scale = 50.0;
-	///////////////////////////////////////////////////////////////////////////////////////
-	error = (center - screencenter);	
-	integ_x += error.x/err_scale;
-	integ_y += error.y/err_scale;
+    
+	error = (center - screencenter);
 	
-	//cout<<"INTEG "<<integ_x<<" x "<<integ_y<<"\t";
+	//Bound Check 2.0
+	if((motorpos.x > panmax && error.x > 0) || (motorpos.x < panmin && error.x < 0))
+		error.x = 0;
 	
+	if((motorpos.y > tiltmax && error.y > 0) || (motorpos.y < tiltmin && error.y < 0))
+		error.y = 0;
+	
+	integ.x += error.x/err_scale;	
+	integ.y += error.y/err_scale;
 	
 	if(abs(error.x) > minwindow && abs(error.x) < maxwindow)
-		motorpos.x -= (p_scale)*(error.x)+(int_p*integ_x);
+		motorpos.x += (p_scale)*(error.x)+(int_p*integ.x);
 	
 	if(abs(error.y) > minwindow && abs(error.y) < maxwindow)
-		motorpos.y += (t_scale)*(error.y)+(int_t*integ_y);
+		motorpos.y += (t_scale)*(error.y)+(int_t*integ.y);
+	
 	
 	stringstream ss;
-	ss << motorpos.y << "P" << motorpos.x << "T0L\n";
+	ss << motorpos.x << "P" << motorpos.y << "T0L\n";
 	command = ss.str();
-	
-	//cout<<command<<endl;
-	///preverror = error;
 	
 	run_motor(command.c_str(), serialport);
 }
 
 Rect detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
 {	
-	//cout<<"Detect"<<endl;
 	vector<Rect> ROIs;
 	equalizeHist(gray, gray);
-	cascade.detectMultiScale(gray, ROIs, scaleFactor, minNeighbors, 0|CASCADE_SCALE_IMAGE, Size(90,90), Size(170,170));
+	cascade.detectMultiScale(gray, ROIs, scaleFactor, minNeighbors, 0|CASCADE_SCALE_IMAGE, Size(40,40));
 	
 	if(ROIs.size() != 0)
 		return ROIs[0];
