@@ -28,9 +28,9 @@ Size subPixWinSize(10,10), winSize(31,31);
 int minNeighbors = 7;
 double scaleFactor = 1.05;
 
-String bodycascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_upperbody.xml";
-String facecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
-String sidecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_profileface.xml";
+String bodycascade = "/home/nvidia/Desktop/Camera/Cascades/haarcascades/haarcascade_upperbody.xml";
+String facecascade = "/home/nvidia/Desktop/Camera/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
+String sidecascade = "/home/nvidia/Desktop/Camera/Cascades/haarcascades/haarcascade_profileface.xml";
 cv::CascadeClassifier body, face, side;
 
 Point2f point;
@@ -222,7 +222,7 @@ void send2server(Mat frame, int count)
 	
 	resize(frame, resized, Size(0,0), 0.5, 0.5, INTER_NEAREST);
 
-	string filename = "/home/nvidia/WebServer/flask-video-streaming/";
+	string filename = "/home/nvidia/Desktop/Camera/Server";
 	char str[1];
 	sprintf(str, "%d", count);
 	filename = filename + str + ".jpg"; 
