@@ -36,8 +36,8 @@ extern Size subPixWinSize, winSize;
 extern int minNeighbors;
 extern double scaleFactor;
 
-extern String bodycascade, facecascade;
-extern cv::CascadeClassifier body, face;
+extern String bodycascade, facecascade, sidecascade;
+extern cv::CascadeClassifier body, face, side;
 
 extern Point2f point;
 
@@ -49,14 +49,29 @@ extern Scalar red, green, blue, white, black;
 extern bool needToInit;
 extern int detectionFreq;
 
+//Motor Control Parameters
+extern int minwindow;
+extern int maxwindow;
+extern int panmin;
+extern int panmax;
+extern int tiltmin;
+extern int tiltmax;
+extern double err_scale;
+extern double err_p;
+extern double err_t;
+extern double int_p;
+extern double int_t;
+extern double drv_p;
+extern double drv_t;
+
 //PROTOTYPES
 string get_tegra_pipeline(string, string, string);
 
-Rect detect(Mat&, Mat&, CascadeClassifier&, Scalar);
+Rect detect(Mat&, Mat&, CascadeClassifier&, CascadeClassifier&, Scalar);
 
 void motor_control(Point);
 
-int runprocess(CascadeClassifier&, VideoCapture);
+int runprocess(CascadeClassifier&, CascadeClassifier&, VideoCapture);
 
 void getCenter(Point&, vector<Point2f>&);
 

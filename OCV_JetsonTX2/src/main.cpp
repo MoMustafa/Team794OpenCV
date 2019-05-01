@@ -15,15 +15,16 @@ int main()
 	}
 	
 */	
-	cv::CascadeClassifier body, face;	
+	cv::CascadeClassifier body, face, side;	
 	body.load(bodycascade);
 	face.load(facecascade);
+	side.load(sidecascade);
 	
 	string pipeline = get_tegra_pipeline(width, height, fps);
 	VideoCapture cap(pipeline, CAP_GSTREAMER);
 	
 	if(cap.isOpened())
-		runprocess(face, cap);
+		runprocess(face, side, cap);
 	else
 		cout<<"Camera cannot be opened."<<endl;
 	

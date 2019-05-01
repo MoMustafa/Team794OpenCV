@@ -1,9 +1,10 @@
 #include "../includes/motorctrl.h"
 
 int delay = 750000;
-int commandsize = 11;
-string centerpos = "500P500T1L\n";
-
+int commandsize = 12;
+string center_x = "#500P";
+string center_y = "#500T";
+string light_off = "#1L";
 int init_motor(const char* port_name)
 {
 	const char* portname = port_name;
@@ -26,29 +27,51 @@ int init_motor(const char* port_name)
 	
 	tcsetattr(serial_port, TCSANOW, &serial_options);
 	
-	run_motor(centerpos.c_str(), serial_port);
+	run_motor(center_y.c_str(), serial_port);
+	run_motor(center_x.c_str(), serial_port);
+	run_motor(light_off.c_str(), serial_port);
 	usleep(delay);
+	
 	cout<<"Motor Successfully Initialized"<<endl;
 	return serial_port;
 }
 
 void run_motor(const void* motorcommand, int serial_port)
 {
+/*
+	void* finished = NULL;
 	cout<<(char*)motorcommand<<endl;
 	if(write(serial_port, motorcommand, commandsize) == -1)
 		cout<<"Write error"<<endl;
-	usleep(delay/100);
+	do
+	{
+		read(serial_port, finished, commandsize);
+		usleep(100);
+	}
+	while(finished !== "Y");	
+*/
+	cout << (char*)motorcommand << endl;
+	if(write(serial_port, motorcommand, commandsize) == -1)
+		cout << "Write Error" << endl;
+	usleep(delay/84);
 }
 
 void reset_motor(int serial_port)
 {
-	run_motor(centerpos.c_str(), serial_port);
-	usleep(delay);
+	run_motor(center_x.c_str(), serial_port);
+	usleep(5000);
+	run_motor(center_y.c_str(), serial_port);
+	usleep(5000);
+	run_motor(light_off.c_str(), serial_port);
+	usleep(5000);
 }
 
 void close_motor(int serial_port)
 {
-	run_motor(centerpos.c_str(), serial_port);
-	usleep(delay);
+	run_motor(center_x.c_str(), serial_port);
+	usleep(5000);
+	run_motor(center_y.c_str(), serial_port);
+	usleep(5000);
+	run_motor(light_off.c_str(), serial_port);
 	close(serial_port);
 }

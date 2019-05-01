@@ -2,6 +2,8 @@
 #include "../includes/motorctrl.h"
 #include "../includes/server.h"
 
+#include <csignal>
+
 //VARIABLES
 //Footage Settings
 string width = "1280";
@@ -9,12 +11,12 @@ string height = "720";
 string fps = "10";
 
 //KLT Parameters 
-const int MAX_COUNT = 100;
+const int MAX_COUNT = 250;
 double quality = 0.001;
 double k = 0.04; 
 int minDist = 1;
 int blockSize = 3;
-bool useHarris = false;
+bool useHarris = true;
 int maxLevel = 3;
 int flags = 0;
 int minThreshold = 0.501;
@@ -23,17 +25,19 @@ TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
 Size subPixWinSize(10,10), winSize(31,31);
 
 //Detection Parameters 
-int minNeighbors = 9;
+int minNeighbors = 7;
 double scaleFactor = 1.05;
 
 String bodycascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_upperbody.xml";
 String facecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_frontalface_alt.xml";
-cv::CascadeClassifier body, face;
+String sidecascade = "/home/nvidia/Desktop/SilasProgram/Cascades/haarcascades/haarcascade_profileface.xml";
+cv::CascadeClassifier body, face, side;
 
 Point2f point;
 Point mid(500,500);
 Point motorpos;
 Point screencenter;
+Point2f prevError(0.0, 0.0);
 Point2f integ(0.0, 0.0);
 
 //Drawing Parameters 
@@ -56,10 +60,27 @@ int serialport;
 const void* command;
 string light = "1L";
 
+int minwindow = 50;
+int maxwindow = 1000;
+int panmin = 200;
+int panmax = 800;
+int tiltmin = 375;
+int tiltmax = 800;
+double err_scale = 58.0;
+double err_p = 0.02;
+double err_t = 0.02;
+double int_p = 0.012;
+double int_t = 0.012;
+double drv_p = -0.10;
+double drv_t = -0.10;
+
 //Server Variables
 char *myfifo = "/tmp/myfifo";
 
-int runprocess(CascadeClassifier& cascade, VideoCapture cap)
+//Exit Prototype
+void signalHandler(int);
+
+int runprocess(CascadeClassifier& cascade1, CascadeClassifier& cascade2, VideoCapture cap)
 {
 	port_name = "/dev/ttyUSB0"; 
 	serialport = init_motor(port_name);
@@ -72,6 +93,8 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 	screencenter = Point(cap.get(3)/2, cap.get(4)/2);
 	Point center = screencenter;
 	motorpos = mid;
+	
+	signal(SIGINT, signalHandler);
 	
 	VideoWriter output("footage.avi", VideoWriter::fourcc('M','J','P','G'), 2, Size(cap.get(3), cap.get(4)), true);
 	
@@ -104,7 +127,7 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 		
 		if(timer%detectionFreq == 0 || timer == 0)
 		{
-			ROI = detect(frame, gray, cascade, green);
+			ROI = detect(frame, gray, cascade1, cascade2, green);
 			//ROI.x += ROI.width*0.40;
 			//ROI.y += ROI.height*0.25;
 			//ROI.height -= ROI.height*0.35;
@@ -130,6 +153,8 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 				tries = 0;
 				reset_motor(serialport);
 				integ = Point2f(0.0, 0.0);
+				motorpos = mid;
+				light = "1L";
 				usleep(50000);
 			}
 		}
@@ -150,9 +175,10 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 			calcOpticalFlowPyrLK(prevGray, gray, features[0], features[1], status, err, winSize, maxLevel, termcrit, flags, minThreshold);
 			
 			displaced += DrawPoints(frame, ROI, center, features[1], status);
+			cout << "d: " << displaced << endl;
 		}
 
-		if(displaced > 100)
+		if(displaced > 0)
 			timer=0;
 		else
 			timer++;
@@ -179,16 +205,11 @@ int runprocess(CascadeClassifier& cascade, VideoCapture cap)
 				count = 0;
 		}
 		
-		output.write(frame);
-		//imshow("Footage", frame);
-		
-	}while(waitKey(1)!=27);
+		//output.write(frame);
+		//imshow("Footage", frame);		
+		//sleep(1);
+	}while(1);
 	
-	destroyAllWindows();
-	
-	usleep(50000);
-	
-	close_motor(serialport);
 	return 0;
 }
 
@@ -223,6 +244,8 @@ int DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, v
 	Point totals;
 	int count = 0;
 
+	cout << "M: " << features.size() <<"\t";
+
 	for(i=k=0; i<features.size(); i++)
 	{
 		totals.x += features[i].x;
@@ -250,56 +273,128 @@ int DrawPoints(Mat& frame, Rect ROI, Point& center, vector<Point2f>& features, v
 void motor_control(Point center)
 {
 	string command;
-	int panmin = 200;
-	int panmax = 800;
-	int tiltmin = 375;
-	int tiltmax = 800;
 	
-	Point2f error;
-	int minwindow = 50;
-	int maxwindow = 500;
-	double p_scale = 0.026;
-	double t_scale = 0.026;
-	double int_p = 0.01;
-	double int_t = 0.01;
-    double err_scale = 50.0;
-    
-	error = (center - screencenter);
-	cout<<"Ex: "<<error.x<<" Ey: "<<error.y<<endl;
+	Point2f error(0.0, 0.0);
+	Point2f change(0.0, 0.0);    
+
+	error = center - screencenter;
+	cout << "E: " << error << "\t"; 
 	
-	//Bound Check 2.0
-	if((motorpos.x > panmax && error.x > 0) || (motorpos.x < panmin && error.x < 0))
+/*	//Added in
+
+	stringstream lighton;
+	lighton << "#" << light;
+	command  = lighton.str();
+	run_motor(command.c_str(), serialport);
+
+	if((motorpos.x >= panmax && error.x > 0) || (motorpos.x <= panmin && error.x < 0))
 		error.x = 0;
-	
-	if((motorpos.y > tiltmax && error.y > 0) || (motorpos.y < tiltmin && error.y < 0))
-		error.y = 0;
-	
-	integ.x += error.x/err_scale;	
-	integ.y += error.y/err_scale;
-	
+
+	integ.x += error.x/err_scale;
 	if(abs(error.x) > minwindow && abs(error.x) < maxwindow)
 		motorpos.x += (p_scale)*(error.x)+(int_p*integ.x);
 	
+	stringstream movex;
+	movex << "#" << motorpos.x << "P";
+	command = movex.str();
+	run_motor(command.c_str(), serialport);
+		
+	if((motorpos.y >= panmax && error.y > 0) || (motorpos.y <= panmin && error.y < 0))
+		error.y = 0;
+
+	integ.y += error.y/err_scale;
 	if(abs(error.y) > minwindow && abs(error.y) < maxwindow)
-		motorpos.y += (t_scale)*(error.y)+(int_t*integ.y);
+		motorpos.y += (p_scale)*(error.y)+(int_p*integ.y);
+	
+	stringstream movey;
+	movey << "#" << motorpos.y << "T";
+	command = movey.str();
+	run_motor(command.c_str(), serialport);
+
+*/
+	//Bound Check 2.0
+	if((motorpos.x >= panmax && error.x > 0) || (motorpos.x <= panmin && error.x < 0))
+		error.x = 0;
+	
+	if((motorpos.y >= tiltmax && error.y > 0) || (motorpos.y <= tiltmin && error.y < 0))
+		error.y = 0;
+
+	integ.x += error.x/err_scale;	
+	integ.y += error.y/err_scale;
+
+	prevError -= error;
+	cout << "pE: " << prevError << endl;
+
+	change.x = (err_p)*(error.x) + (int_p)*(integ.x) + (drv_p*prevError.x);
+	change.y = (err_t)*(error.y) + (int_t)*(integ.y) + (drv_t*prevError.y);
+	
+	if(abs(error.x) > minwindow && abs(error.x) < maxwindow)
+	{
+		motorpos.x += change.x;
+		if((motorpos.x > panmax) || (motorpos.x < panmin))
+			motorpos.x -= change.x;
+	}
+
+	if(abs(error.y) > minwindow && abs(error.y) < maxwindow)
+	{
+		motorpos.y += change.y;
+		if((motorpos.y > tiltmax) || (motorpos.y < tiltmin))
+			motorpos.y -= change.y;
+	}	
 	
 	stringstream ss;
-	ss << motorpos.x << "P" << motorpos.y << "T" << light << "\n";
-	command = ss.str();
+	ss << "#" << motorpos.x << "P" << motorpos.y << "T" << light << "\n";
 	
+//	ss << "#" << motorpos.x << "P";
+	command = ss.str();
 	run_motor(command.c_str(), serialport);
+/*
+	ss.str("");
+
+	ss << "#" << motorpos.y << "T";
+	command = ss.str();
+	run_motor(command.c_str(), serialport);
+	ss.str("");
+
+	ss << "#" << light << "\n";
+	command = ss.str();
+	run_motor(command.c_str(), serialport); 
+	ss.str("");
+*/
+	prevError = error;
 }
 
-Rect detect(Mat& frame, Mat& gray, CascadeClassifier& cascade, Scalar color)
+Rect detect(Mat& frame, Mat& gray, CascadeClassifier& cascade1, CascadeClassifier& cascade2, Scalar color)
 {	
+	vector<Rect> ROI1;
+	vector<Rect> ROI2;
 	vector<Rect> ROIs;
+
 	equalizeHist(gray, gray);
-	cascade.detectMultiScale(gray, ROIs, scaleFactor, minNeighbors, 0|CASCADE_SCALE_IMAGE, Size(40,40));
+	cascade1.detectMultiScale(gray, ROI1, scaleFactor, minNeighbors, 0|CASCADE_SCALE_IMAGE, Size(70,70));
+	cascade2.detectMultiScale(gray, ROI2, scaleFactor, minNeighbors, 0|CASCADE_SCALE_IMAGE, Size(70,70));
+
+	ROIs.reserve(ROI1.size() + ROI2.size());
+	ROIs.insert(ROIs.end(), ROI1.begin(), ROI1.end());
+	ROIs.insert(ROIs.end(), ROI2.begin(), ROI2.end());	
 	
 	if(ROIs.size() != 0)
 		return ROIs[0];
 	
 	return Rect(0, 0, gray.size().width, gray.size().height);
+}
+
+void signalHandler(int signum)
+{
+	cout<<"\nClosing Application"<<endl;
+	
+	destroyAllWindows();
+		
+	close_motor(serialport);
+	
+	usleep(50000);
+
+	exit(signum);
 }
 
 string get_tegra_pipeline(string width, string height, string fps)
