@@ -8,7 +8,7 @@
 SoftwareDynamixelInterface interface(SOFT_RX_PIN, SOFT_TX_PIN);
 
 // setting global variables 
-int16_t motorSpeed=200; //512;
+int16_t motorSpeed=512; //200;
 const long unsigned int baudrate = 57600;
 const int ledPin = 5; // pin the LED is connected to
 const int motorReset = 6;
@@ -57,20 +57,17 @@ void loop() {
       panMotor.goalPosition(value);
       panGoal = value;
       value = 0;
-      Serial.println("Y");
     }
     else if (ch == 84)  // is the chararacter = to T Send tilt move for motor control
     {
       tiltGoal = value;
       tiltMotor.goalPosition(value);
       value = 0;
-      Serial.println("Y");
     }
     else if (ch == 76 ) // is the character = to L Send light command to relay
     {
       digitalWrite(ledPin, value);
       value = 0;
-      Serial.println("Y");
     }
     else if (ch == 77 ) // is the character = to M Reset motors relay
     {
@@ -78,12 +75,10 @@ void loop() {
       delay (1000);
       digitalWrite(motorReset, 1);
       value = 0;
-      Serial.println("Y");
     }
     else if ( ch == 35 ) // set of start character = to # Reset stream
     {
       value = 0;
-      Serial.println("Y");
     }
     
   }
